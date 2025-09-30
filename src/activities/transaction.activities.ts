@@ -1,6 +1,9 @@
 import { Kafka, Producer } from 'kafkajs';
 let producer: Producer | null = null;
 let connected = false;
+import { AppDataSource, initDB } from '../db';
+import { Transaction } from '../entities/Transaction';
+
 
 export async function getProducer(): Promise<Producer> {
   if (producer && connected) {
@@ -80,5 +83,28 @@ export async function logAudit(txn: any) {
     throw err; // Temporal will retry activity
   }
 
+}
+
+export async function saveWorkflowResult(result: any) {
+    await initDB(); // ensure connection is established
+
+    const repo = AppDataSource.getRepository(Transaction);
+
+    // Update if exists, else create
+    let txn = await repo.findOne({ where: { referenceId: result.txnId.toString() } });
+    if (!txn) {
+      txn = repo.create({
+        referenceId: result.txnId.toString(),
+        amount: result.amount || 0,
+        status: result.status,
+        finishedAt: result.finishedAt ? new Date(result.finishedAt) : undefined,
+      });
+    } else {
+      txn.status = result.status;
+      txn.finishedAt = result.finishedAt ? new Date(result.finishedAt) : undefined;
+    }
+
+    await repo.save(txn);
+    console.log('✅ Transaction saved:', txn);
 }
 
